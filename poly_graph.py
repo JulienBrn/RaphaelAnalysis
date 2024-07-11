@@ -63,20 +63,67 @@ def generate_dotfile(out_location: Path, graph: nx.DiGraph):
 def view_pdf(pdf_location: Path):
     graphviz.view(pdf_location)
 
-def generate_pdf(out_location: Path, graph=None, dotfile=None,view=False):
+
+def default_node_formatter(attrs):
+    labels = []
+    other_attr = {}
+    if "alias" in attrs:
+        labels.append(f'{attrs["alias"]}')
+        other_attr["color"]="green"
+    if "line_num" in attrs:
+        labels.append(f'line={attrs["line_num"]}')
+    labels+=[f'{k}={v}' for k,v in attrs.items() if not k in ["alias", "line_num", "loop_start", "id", "value", "name", "data"]]
+    return dict(label="\n".join(labels), **other_attr)
+
+def default_edge_formatter(attrs):
+    labels = []
+    other_attr = {}
+    if "alias" in attrs:
+        labels.append(f'{attrs["alias"]}')
+        other_attr["arrowsize"]=2
+        other_attr["color"]="red"
+    labels+=[f'{k}={v}' for k,v in attrs.items() if not k in ["alias", "source", "target", "data"]]
+    return dict(label="\n".join(labels), **other_attr)
+
+
+def change_graph_attributes(graph, node_attr = lambda attr: attr, edge_attr=lambda attr:attr):
+    from copy import deepcopy
+    graph = deepcopy(graph)
+    for node in graph.nodes:
+        attrs = {}
+        for attr in graph.nodes(data=True)[node]:
+            attrs[attr] = graph.nodes(data=True)[node][attr]
+        for attr in attrs:
+            graph.nodes[node].pop(attr, None)
+        for k, v in node_attr(attrs).items():
+            graph.nodes[node][k] = v
+
+    for edge in graph.edges:
+        attrs = {}
+        for attr in graph.edges[edge]:
+            attrs[attr] = graph.edges[edge][attr]
+        for attr in attrs:
+            graph.edges[edge].pop(attr, None)
+        for k, v in edge_attr(attrs).items():
+            graph.edges[edge][k] = v
+    return graph
+
+def generate_output(pdf_location=None, dot_location=None, graph=None, use_dot=False,view=False, format_graph=(default_node_formatter, default_edge_formatter)):
     rm_dotfile = False
-    if dotfile is None:
+    if not use_dot:
         if graph is None:
             raise Exception("Graph or dot file needs to be provided")
-        dotfile = out_location.with_suffix(".tmp.dot")
-        out_location.parent.mkdir(exist_ok=True, parents=True)
-        generate_dotfile(dotfile, graph)
-        rm_dotfile=True
-    graphviz.render("dot", filepath=dotfile, outfile=out_location)
-    if rm_dotfile:
-        dotfile.unlink()
-    if view:
-        view_pdf(out_location)
+        if dot_location is None:
+            dot_location = pdf_location.with_suffix(".tmp.dot")
+            rm_dotfile=True
+        pdf_location.parent.mkdir(exist_ok=True, parents=True)
+        nx.nx_pydot.write_dot(change_graph_attributes(graph, *format_graph), dot_location)
+    if not pdf_location is None:
+        graphviz.render("dot", filepath=dot_location, outfile=pdf_location, format="pdf")
+        if rm_dotfile:
+            dot_location.unlink()
+        if view:
+            view_pdf(pdf_location)
 
 
 def load_poly_data_file(file: Path) -> pd.DataFrame:
@@ -92,15 +139,15 @@ def get_line_counters(data: Path | str | pd.DataFrame) -> Dict[int, int]:
     return lines["_T"].value_counts().to_dict()
 
 
-def get_edge_dataframe(data: Path | str | pd.DataFrame) -> pd.DataFrame:
-    if not hasattr(data, "groupby"):
-        data = load_poly_data_file(data)
-    lines: pd.DataFrame = data.loc[data["family"]==10].sort_values("t")
-    combined = pd.concat([lines.iloc[:-1, :].reset_index(drop=True), lines.iloc[1:, :].rename(columns={k:k+"_next" for k in lines.columns}).reset_index(drop=True)], axis=1)
-    combined["edge"] = combined.apply(lambda row: (row["_T"], row["_T_next"]), axis=1)
-    combined["inner_events"] = combined.apply(
-        lambda row: data.loc[(data["t"]>= row["t"]) & (data["t"]<= row["t_next"]) & (data["family"] != 10)].copy(deep=True), axis=1)
-    return combined
+def get_edge_dataframe(data: pd.DataFrame) -> pd.DataFrame:
+    data = data.sort_values("t")
+    data["line_change_counter"] = (data["family"] == 10).cumsum()-1
+    data["node"] = np.where(data["family"] == 10, data["_T"], np.nan)
+    data["node"] = data["node"].fillna(method="ffill")
+    data["edge"] = np.where(data["family"] == 10, (data["_T"], data["node"].shift(1)), np.nan)
+    data["edge"] = data["edge"].fillna(method="ffill")
+    data["next_t"] = data["t"].shift(1)
+    return data
 
 def get_edge_info(data: Path | str | pd.DataFrame) -> pd.DataFrame:
     if not hasattr(data, "groupby"):

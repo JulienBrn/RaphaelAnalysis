@@ -71,6 +71,89 @@ class SessionGraph:
 @p.register
 @Data.from_class()
 class SessionGraph:
+    name = "session_rtmt_raw"
+
+    @staticmethod
+    def location(folder, session):
+        return Path(folder)/"PolyAnalysis"/"Sessions"/f"{session}_RT_MT.tsv"
+    
+    @staticmethod
+    def dataframe(db: DatabaseInstance, out_location, selection):
+        edge_data = db.run_action("get_edge_dataframe", "session_graph", selection, single=True)
+        df_dict={}
+        match selection["forced"], selection["handedness"], selection["stim_type"]:
+            case ("Left", "Ambi", _):
+                df_dict["l1_rt_stim"] = edge_data.loc[edge_data["edge"]==(25, 26)]
+                df_dict["l1_mt_stim"] = edge_data.loc[edge_data["edge"]==(26, 27)]
+                df_dict["l1_rt_nostim"] = edge_data.loc[edge_data["edge"]==(5, 6)]
+                df_dict["l1_mt_nostim"] = edge_data.loc[edge_data["edge"]==(6, 7)]
+            case ("notforced", "Ambi", _) | ("notforced", _, "Conti"):
+                df_dict["l1_rt_stim"] = edge_data.loc[edge_data["edge"]==(40, 41)]
+                df_dict["l1_mt_stim"] = edge_data.loc[edge_data["edge"]==(41, 42)]
+                df_dict["l1_rt_nostim"] = edge_data.loc[edge_data["edge"]==(5, 6)]
+                df_dict["l1_mt_nostim"] = edge_data.loc[edge_data["edge"]==(6, 7)]
+                df_dict["l2_rt_stim"] = edge_data.loc[edge_data["edge"]==(25, 26)]
+                df_dict["l2_mt_stim"] = edge_data.loc[edge_data["edge"]==(26, 27)]
+                df_dict["l2_rt_nostim"] = edge_data.loc[edge_data["edge"]==(8, 9)]
+                df_dict["l2_mt_nostim"] = edge_data.loc[edge_data["edge"]==(9, 10)]
+            case ("notforced", _, "Beta"):
+                df_dict["l1_rt_stim"] = edge_data.loc[edge_data["edge"]==(40, 41)]
+                df_dict["l1_mt_stim"] = edge_data.loc[edge_data["edge"]==(41, 42)]
+                df_dict["l1_rt_nostim"] = edge_data.loc[edge_data["edge"]==(5, 6)]
+                df_dict["l1_mt_nostim"] = edge_data.loc[edge_data["edge"]==(6, 7)]
+                df_dict["l2_rt_stim"] = edge_data.loc[edge_data["edge"]==(33, 34)]
+                df_dict["l2_mt_stim"] = edge_data.loc[edge_data["edge"]==(34, 35)]
+                df_dict["l2_rt_nostim"] = edge_data.loc[edge_data["edge"]==(8, 9)]
+                df_dict["l2_mt_nostim"] = edge_data.loc[edge_data["edge"]==(9, 10)]
+            case _:
+                raise Exception("Unknowm case")
+        all_dfs = []
+        for k, df in df_dict.items():
+            df = df.copy()
+            df["arrow_duration"] = df["duration"]
+            if "mt" in k:
+                def find_first_lever_press(d):
+                    n = 1 if "l1" in k else 2
+                    d = d.loc[(d["family"] == 2) & (d["nbre"] == n)]
+                    d = d.sort_values("t")
+                    return d["t"].iat[0]
+                df["first_lever_press"] = df["inner_events"].apply(find_first_lever_press)
+                df["duration"] = df["first_lever_press"] - df["t"]
+
+            df=df[["duration", "arrow_duration"]]
+            df["lever"] = "Left" if "l1" in k else "Right"
+            df["value"] = "rt" if "rt" in k else "mt"
+            df["stim"] = False if "nostim" in k else True
+            all_dfs.append(df)
+
+        all = pd.concat(all_dfs, ignore_index=True)
+        return all
+    
+    @staticmethod
+    def compute(db: DatabaseInstance, out_location, selection):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        all = db.run_action("dataframe", "session_rtmt", selection, single=True)
+        sns.displot(data= all, common_norm=False, stat= "density", 
+                    row="value", col="lever", hue="stim", x="duration", bins=100, kde=True, 
+                    aspect=16/9, facet_kws=dict(margin_titles=True, gridspec_kws=dict(top=0.9)))
+        plt.suptitle(",".join([f'{k}={v}' for k,v in selection.items() if not k in ["session", "folder"]]))
+        out_location.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_location)
+        return out_location
+    
+    @staticmethod
+    def save_dataframe(db: DatabaseInstance, out_location: Path, selection):
+        all: pd.DataFrame = db.run_action("dataframe", "session_rtmt", selection, single=True)
+        out = out_location.with_suffix(".tsv")
+        out.parent.mkdir(exist_ok=True, parents=True)
+        all.to_csv(out, sep="\t", index=False)
+        return out
+    
+
+@p.register
+@Data.from_class()
+class SessionGraph:
     name = "session_rtmt"
 
     @staticmethod
@@ -156,8 +239,8 @@ class SessionGraph:
     name = "subject_rtmt"
 
     @staticmethod
-    def location(folder, subject, hemi):
-        return Path(folder)/"PolyAnalysis"/"Subjects"/f"{subject}_hemi{hemi}_RT_MT.pdf"
+    def location(folder, subject, hemi, condition):
+        return Path(folder)/"PolyAnalysis"/"Subjects"/f"{subject}_hemi{hemi}_{condition}_RT_MT.pdf"
     
     @staticmethod
     def dataframe(db: DatabaseInstance, out_location, selection):
@@ -193,8 +276,8 @@ class SessionGraph:
     name = "rtmt"
 
     @staticmethod
-    def location(folder, hemi, handedness, forced):
-        return Path(folder)/"PolyAnalysis"/"RTMT"/f"{forced}_hemi{hemi}_hand{handedness}RT_MT.pdf"
+    def location(folder, hemi, handedness, forced, condition):
+        return Path(folder)/"PolyAnalysis"/"RTMT"/f"{forced}_hemi{hemi}_{condition}_hand{handedness}RT_MT.pdf"
 
     @staticmethod
     def dataframe(db: DatabaseInstance, out_location, selection):

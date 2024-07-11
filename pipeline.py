@@ -3,7 +3,7 @@ import sys
 from database import Database, DatabaseInstance, cache, Data, CoordComputer, singleglob
 import pandas as pd, numpy as np, xarray as xr
 from pathlib import Path
-import coordinates, polyanalysis
+import inputs, polyanalysis, poly_preprocessing, session_computation, rtmt_results, edge_count_results
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +12,11 @@ def mk_pipeline(folder):
     import seaborn as sns
     pipeline = Database("Raphael database")
     pipeline.declare(CoordComputer(coords={"folder"}, dependencies=set(), compute=lambda db, df: df.assign(folder=str(folder))))
-    pipeline = Database.join(pipeline, coordinates.pipeline)
-    pipeline = Database.join(pipeline, polyanalysis.pipeline)
+    pipeline = Database.join(pipeline, inputs.pipeline)
+    pipeline = Database.join(pipeline, poly_preprocessing.pipeline)
+    pipeline = Database.join(pipeline, session_computation.pipeline)
+    pipeline = Database.join(pipeline, rtmt_results.pipeline)
+    pipeline = Database.join(pipeline, edge_count_results.pipeline)
     return pipeline
 
 
@@ -25,13 +28,21 @@ if __name__ == "__main__":
     beautifullogger.setup(displayLevel=logging.INFO)
     folder = Path("/home/julienb/Documents/Data/Raphael/")
     p = mk_pipeline(folder).initialize()
-    print(p)
-    # print(p.get_coords("subject"))
-    p.run_action("make_tsv", "event_data")
-    p.run_action("compute", "task_graph")
-    p.run_action("get_edge_dataframe", "session_graph")
-    p.run_action("compute", "session_rtmt")
-    p.run_action("save_dataframe", "session_rtmt")
-    p.run_action("compute", "subject_rtmt")
-    p.run_action("compute", "rtmt")
+    for d in p.db.data.keys():
+        if "compute" in p.db.data[d].actions:
+            # if not "fig" in d:
+                p.run_action("compute", d)
+    # p.run_action("compute", "task_graph_metadata")
+    # p.run_action("compute", "task_graph")
+    # p.run_action("compute", "task_pdf")
+    # p.run_action("compute", "event_dataframe")
+    # p.run_action("compute", "session_rtmt_data")
+    # p.run_action("compute", "session_duration_stats")
+    # p.run_action("compute", "session_duration")
+    # p.run_action("compute", "session_rtmt_results")
+    # p.run_action("compute", "session_stat_results")
+    # p.run_action("compute", "session_pvalue_results")
+    # p.run_action("compute", "session_rtmt_figure_results")
+
+   
     

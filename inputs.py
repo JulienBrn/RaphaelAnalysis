@@ -1,6 +1,6 @@
 import logging, beautifullogger
 import sys
-from database import Database, DatabaseInstance, cache, Data, CoordComputer, singleglob
+from database import Database, DatabaseInstance, cache, Data, CoordComputer, singleglob, precompute
 import pandas as pd, numpy as np, xarray as xr
 from pathlib import Path
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ class AllDatFiles:
 
     @staticmethod
     def location(folder):
-        return  Path(folder)/"all_dat_files.txt"
+        return  Path(folder)/"PolyAnalysis"/"all_dat_files.txt"
     
     @staticmethod
     @cache(lambda *args: np.savetxt(*args, fmt="%s"), force_recompute=True)
@@ -23,21 +23,13 @@ class AllDatFiles:
         folder=Path(selection["folder"]) / "Poly_Data"
         return np.array([str(f.relative_to(folder)) for f in folder.glob("**/*.dat")])
 
-    @staticmethod
-    def load(db: DatabaseInstance, out_location, selection):
-        loc = db.compute_single("all_dat_files", selection)
-        return np.loadtxt(loc, dtype=str, comments=None)
-    
-    @staticmethod
-    def show(db, out_location, selection):
-        v = db.run_action("load", "all_dat_files", selection, single=True)
-        print(v)
+    @precompute("all_dat_files")
+    def load(db: DatabaseInstance, out_location, selection): return np.loadtxt(out_location, dtype=str, comments=None)
 
 @p.register
 @CoordComputer.from_function(vectorized=False, adapt_return=False, coords=["session","subject", "date", "stim_type", "hemi", "condition", "handedness", "forced"], database_arg="db")
-def session(db, folder):
+def session(db: DatabaseInstance, folder):
     l = db.run_action("load", "all_dat_files", folder=folder, single=True)
-    # l = [f for f in l if "BAGOSMOV" in f]
     df = pd.DataFrame()
     df["file_stem"] = [Path(f).stem for f in l]
     df["session"] = [str(Path(f).with_suffix("")) for f in l]
@@ -67,45 +59,35 @@ def session(db, folder):
     return df.drop(columns=["file_stem"])
 
 @p.register
-@Data.from_class()
-class Task:
-    name = "task_file"
-
-    @staticmethod
-    def location(folder, stim_type, handedness, forced):
-        if pd.isna(folder):
-            raise Exception("folder is nan")
-        if forced=="notforced":
-            file = singleglob(Path(folder)/"Poly_Exercices", f"*{handedness}*{stim_type}*L2_Nico.xls")
-        else:
-            file = singleglob(Path(folder)/"Poly_Exercices", f"*100{forced}*{stim_type}*.xls")
-        return file
-    
-    @staticmethod
-    def load(db: DatabaseInstance, out_location, selection):
-        import poly_graph
-        return poly_graph.load_task_file(out_location)
+@CoordComputer.from_function()
+def task(stim_type, handedness, forced):
+    if forced == "notforced":
+        return [f"stim={stim_type}-hand={handedness}-{forced}"]
+    else:
+        return [f"stim{stim_type}-hand{handedness}-forced{forced}"]
 
 @p.register
 @Data.from_class()
-class EventData:
-    name = "event_data"
+class TaskFile:
+    name = "task_file"
+
+    @staticmethod
+    def location(folder, stim_type, handedness, forced, task):
+        ex_folder = Path(folder)/"Poly_Exercices"
+        if forced=="notforced":
+            file = singleglob(ex_folder, f"*{handedness}*{stim_type}*L2_Nico.xls")
+        else:
+            file = singleglob(ex_folder, f"*100{forced}*{stim_type}*.xls")
+        return file
+    
+
+@p.register
+@Data.from_class()
+class DataFile:
+    name = "data_file"
 
     @staticmethod
     def location(folder, session):
         return Path(folder)/"Poly_Data"/f"{session}.dat"
-        
-    
-    @staticmethod
-    def load(db: DatabaseInstance, out_location, selection):
-        import poly_graph
-        return poly_graph.load_poly_data_file(out_location)
 
-    @staticmethod
-    def make_tsv(db: DatabaseInstance, out_location, selection):
-        df = db.run_action("load", "event_data", selection, single=True)
-        out = Path(selection["folder"])/ "PolyAnalysis"/"Sessions"/f"{selection['session']}_graph.tsv"
-        out.parent.mkdir(exist_ok=True, parents=True)
-        df.to_csv(out, sep="\t", index=False)
-        return out
 pipeline = p
