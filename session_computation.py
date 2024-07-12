@@ -116,7 +116,7 @@ class EventDataframe:
             df = df.loc[~df["stim"]]
             res = pd.DataFrame()
             grp = df.groupby(["variable", "lever"])
-            res["a"] = grp["duration"].std()
+            res["a"] = 1/grp["duration"].std()
             res["b"] = grp["duration"].mean()
             res["adjust_formula"] =  "y=a*(x-b)"
             return res.reset_index()
