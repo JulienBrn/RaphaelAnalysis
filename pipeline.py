@@ -3,7 +3,8 @@ import sys
 from database import Database, DatabaseInstance, cache, Data, CoordComputer, singleglob
 import pandas as pd, numpy as np, xarray as xr
 from pathlib import Path
-import inputs, polyanalysis, poly_preprocessing, session_computation, rtmt_results, edge_count_results
+import inputs, polyanalysis, poly_preprocessing, session_computation, results
+# rtmt_results, edge_count_results, trial_counts_results
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,10 @@ def mk_pipeline(folder):
     pipeline = Database.join(pipeline, inputs.pipeline)
     pipeline = Database.join(pipeline, poly_preprocessing.pipeline)
     pipeline = Database.join(pipeline, session_computation.pipeline)
-    pipeline = Database.join(pipeline, rtmt_results.pipeline)
-    pipeline = Database.join(pipeline, edge_count_results.pipeline)
+    pipeline = Database.join(pipeline, results.pipeline)
+    # pipeline = Database.join(pipeline, rtmt_results.pipeline)
+    # pipeline = Database.join(pipeline, edge_count_results.pipeline)
+    # pipeline = Database.join(pipeline, trial_counts_results.pipeline)
     return pipeline
 
 
@@ -28,6 +31,7 @@ if __name__ == "__main__":
     beautifullogger.setup(displayLevel=logging.INFO)
     folder = Path("/home/julienb/Documents/Data/Raphael/")
     p = mk_pipeline(folder).initialize()
+    print(p)
     for d in p.db.data.keys():
         if "compute" in p.db.data[d].actions:
             # if not "fig" in d:
