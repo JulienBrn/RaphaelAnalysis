@@ -162,6 +162,9 @@ def compute_trialpair_counts_fig(data_name):
     return inner
 
 
+
+
+
 functions = pd.DataFrame([
     ["trial_counts", "tsv", dict(compute=lambda n: compute_trial_counts, load=lambda n: precompute(n)(tsvload)), []],
     ["trial_counts_fig", "pdf", dict(compute=lambda n: compute_trial_counts_fig(n.replace("_fig", ""))), []],
@@ -196,6 +199,11 @@ for _, f in functions.iterrows():
         loc = grp["loc"].format(name=f["name"], ext=f["ext"], fdeps = deps_str)
         actions = {k: v(name) for k, v in f["actions"].items()}
         p.declare(make_computer(name, params, loc, actions))
+
+
+
+    
+
 
 
 pipeline = p

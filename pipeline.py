@@ -3,7 +3,7 @@ import sys
 from database import Database, DatabaseInstance, cache, Data, CoordComputer, singleglob
 import pandas as pd, numpy as np, xarray as xr
 from pathlib import Path
-import inputs, polyanalysis, poly_preprocessing, session_computation, results
+import inputs, poly_preprocessing, session_computation, results
 # rtmt_results, edge_count_results, trial_counts_results
 
 logger = logging.getLogger(__name__)
