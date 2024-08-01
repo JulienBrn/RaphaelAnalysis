@@ -45,51 +45,6 @@ class EventDataframe:
 
 
 
-
-@p.register
-@Data.from_class()
-class TaskEdgeMapping:
-    name = "task_graph_metadata"
-
-    @staticmethod
-    def location(folder, task):
-        return Path(folder)/ "PolyAnalysis" / "Tasks" /f"{task}"/ f"graph_metadata.json"
-
-    @staticmethod
-    @cache(lambda out, d: json.dump(d, out, indent=4), open="w",  force_recompute=False)
-    def compute(db: DatabaseInstance, out_location, selection):
-        match selection["forced"], selection["handedness"], selection["stim_type"]:
-            case ("Left", "Ambi", _):
-                edges = { (25, 26): "rt_stim_leftlever", (26, 27): "mt_stim_leftlever", (5, 6): "rt_nostim_leftlever",  (6, 7): "mt_nostim_leftlever"}
-            case ("notforced", "Ambi", _) | ("notforced", _, "Conti"):
-                edges = {(25, 26): "rt_stim_rightlever", (26, 27): "mt_stim_rightlever", (5, 6): "rt_nostim_leftlever",  (6, 7): "mt_nostim_leftlever",
-                        (40, 41): "rt_stim_leftlever", (41, 42): "mt_stim_leftlever", (8, 9): "rt_nostim_rightlever",  (9, 10): "mt_nostim_rightlever"
-                        }
-            case ("notforced", _, "Beta"):
-                edges = {(33, 34): "rt_stim_rightlever", (34, 35): "mt_stim_rightlever", (5, 6): "rt_nostim_leftlever",  (6, 7): "mt_nostim_leftlever",
-                        (40, 41): "rt_stim_leftlever", (41, 42): "mt_stim_leftlever", (8, 9): "rt_nostim_rightlever",  (9, 10): "mt_nostim_rightlever"
-                        }
-        def compute_edge_metadata(edge, edge_name):
-            return dict(
-                alias=edge_name, 
-                start=edge[0],
-                end=edge[1],
-                data=dict(lever = "Left" if "left" in edge_name else "Right",
-                stim = False if "nostim" in edge_name else True,
-                variable = "rt" if "rt" in edge_name else "mt"),
-                )
-        
-        edges = [compute_edge_metadata(k, v) for k, v in edges.items()]
-        nodes = [dict(node=2, alias="Trial_start", loop_start=True)]
-
-        return dict(edges=edges, nodes=nodes)
-        
-    
-    @precompute("task_graph_metadata")
-    def load(db: DatabaseInstance, out_location, selection): 
-        with out_location.open("r") as f:
-            return json.load(f)
-
 @p.register
 @Data.from_class()
 class TaskGraph:
@@ -100,26 +55,36 @@ class TaskGraph:
         return Path(folder)/ "PolyAnalysis" / "Tasks" / f"{task}"/ f"graph.json"
 
     @staticmethod
-    @cache(lambda out, graph: json.dump(nx.cytoscape_data(graph), out.open("w"), indent=4))
+    @cache(lambda out, graph: json.dump(nx.cytoscape_data(graph), out.open("w"), indent=4), force_recompute=False)
     def compute(db: DatabaseInstance, out_location: Path, selection):
         import networkx as nx
         task_file = db.run_action("location", "task_file", selection, single=True)
         task_df = poly_graph.load_task_file(task_file)
         graph: nx.DiGraph = poly_graph.get_automaton(task_df)
-        metadata = db.run_action("load", "task_graph_metadata", selection, single=True)
-        for node in metadata["nodes"]:
-            n = node["node"]
-            for k, v in node.items():
-                if k in ["node"]:
+        for node in graph.nodes:
+            names=[]
+            for i in range(3):
+                if not f"T{i}" in graph.nodes(data=True)[node]:
                     continue
-                graph.nodes[n][k] =v
-        for edge in metadata["edges"]:
-            s = edge["start"]
-            e = edge["end"]
-            for k, v in edge.items():
-                if k in ["start", "end"]:
-                    continue
-                graph.edges[(s,e)][k] =v
+                desc = graph.nodes(data=True)[node][f"T{i}"]
+                import re
+                m = re.match(r'\d*_(\w+)$', desc)
+                if not m is None:
+                     names.append(m.group(1))
+            if "ASND(6,20)" in graph.nodes(data=True)[node]:
+                if graph.nodes(data=True)[node][f"ASND(6,20)"] == "on(50,1,1,40,5000)":
+                    names.append("CueRight")
+                if graph.nodes(data=True)[node][f"ASND(6,20)"] == "on(50,1,1,40,1000)":
+                    names.append("CueLeft")
+            if "TTLP6(15,6)" in graph.nodes(data=True)[node]:
+                if str(graph.nodes(data=True)[node][f"TTLP6(15,6)"]).startswith("ON"):
+                    names.append("StimBeta")
+            if "TTLP2(15,2)" in graph.nodes(data=True)[node]:
+                if str(graph.nodes(data=True)[node][f"TTLP2(15,2)"]).startswith("ON"):
+                    names.append("StimConti")
+
+                   
+            graph.nodes(data=True)[node]["names"] = names
         return graph
     
     @precompute("task_graph")
@@ -136,7 +101,7 @@ class TaskGraph:
         return Path(folder)/ "PolyAnalysis" / "Tasks" / f"{task}"/ f"graph.pdf"
 
     @staticmethod
-    @cache(lambda out, graph: poly_graph.generate_output(pdf_location=out, graph=graph))
+    @cache(lambda out, graph: poly_graph.generate_output(pdf_location=out, graph=graph), force_recompute=False)
     def compute(db: DatabaseInstance, out_location: Path, selection):
         return db.run_action("load", "task_graph", selection, single=True)
 

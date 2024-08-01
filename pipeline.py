@@ -29,12 +29,20 @@ def mk_pipeline(folder):
 
 if __name__ == "__main__":
     beautifullogger.setup(displayLevel=logging.INFO)
-    folder = Path("/home/julienb/Documents/Data/Raphael/")
+    folder = Path("/home/julienb/Documents/Data/Raphael3/")
     p = mk_pipeline(folder).initialize()
     print(p)
+    # p.run_action("compute", "trial_data")
+    # p.run_action("compute", "all_basicmotor_fig")
+    # p.run_action("compute", "all_cuemotor_fig")
+    # p.run_action("compute", "all_pawmotor_fig")
+    # p.run_action("compute", "all_zscored_basicmotor_fig")
+    # p.run_action("compute", "all_zscored_cuemotor_fig")
+    # p.run_action("compute", "all_zscored_pawmotor_fig")
+    # exit()
     for d in p.db.data.keys():
         if "compute" in p.db.data[d].actions:
-            # if not "fig" in d:
+            if not "session" in d and not "subject" in d:
                 p.run_action("compute", d)
     # p.run_action("compute", "task_graph_metadata")
     # p.run_action("compute", "task_graph")
